@@ -1508,10 +1508,12 @@ impl<'a> CalleesWithLocation<'a> {
             Type::Quantified(q) => match &q.restriction {
                 Restriction::Bound(Type::ClassType(c)) => self.find_init_or_new(c.class_object()),
                 Restriction::Constraints(tys) => self.init_or_new_from_union(tys, callee_range),
-                x => panic!(
-                    "unexpected restriction {}: {x:?}",
-                    self.module_info.display_range(callee_range)
-                ),
+                // Unbounded TypeVar in a construction context
+                // (`x()` where `x: T`) or `Bound(_)` to something
+                // other than a ClassType (e.g. a Union). No concrete
+                // class to instantiate; return empty instead of
+                // panicking.
+                Restriction::Bound(_) | Restriction::Unrestricted => vec![],
             },
             Type::Union(u) => self.init_or_new_from_union(&u.members, callee_range),
             Type::Intersect(intersection) => {
@@ -1544,10 +1546,19 @@ impl<'a> CalleesWithLocation<'a> {
                 Restriction::Bound(b) => {
                     self.callee_from_type(b, call_target, callee_range, call_arguments)
                 }
-                x => panic!(
-                    "unexpected restriction {}: {x:?}",
-                    self.module_info.display_range(callee_range)
-                ),
+                Restriction::Constraints(tys) => tys
+                    .iter()
+                    .flat_map(|t| {
+                        self.callee_from_type(t, call_target, callee_range, call_arguments)
+                    })
+                    .unique()
+                    .sorted_by(|a, b| a.target.cmp(&b.target))
+                    .collect_vec(),
+                // Unbounded TypeVar — no concrete type to resolve
+                // callees against. Empty list is the honest answer;
+                // the previous panic was defensive coding that
+                // fired on legitimate generic-function calls.
+                Restriction::Unrestricted => vec![],
             },
             Type::Never(_) => vec![],
             // Python's `None` type. See the matching arm in
