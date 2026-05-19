@@ -791,6 +791,11 @@ impl<'a> CalleesWithLocation<'a> {
             },
             Type::Union(u) => self.init_or_new_from_union(&u.members, callee_range),
             Type::Any(_) => vec![],
+            // Python's `None` type. Calling it is a TypeError at
+            // runtime, but downstream callers (query consumers,
+            // Pysa data-flow, etc.) want "no callee found" rather
+            // than a hard crash. Mirrors the `Any` arm above.
+            Type::None => vec![],
             x => {
                 panic!(
                     "unexpected type at [{}]: {x:?}",
@@ -817,6 +822,10 @@ impl<'a> CalleesWithLocation<'a> {
                 ),
             },
             Type::Never(_) => vec![],
+            // Python's `None` type. See the matching arm in
+            // `init_or_new_from_type` — calling None() is a TypeError
+            // at runtime, return "no callee" rather than panicking.
+            Type::None => vec![],
             Type::Union(u) => {
                 // get callee for each type
                 u.members
