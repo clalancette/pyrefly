@@ -459,15 +459,32 @@ impl<'a> CalleesWithLocation<'a> {
     fn qname_to_string(n: &QName) -> String {
         format!("{}.{}", n.module_name(), n.id())
     }
-    fn class_name_from_def_kind(kind: &FunctionKind) -> String {
-        if let FunctionKind::Def(f) = kind
-            && let Some(cls) = &f.cls
-        {
-            format!("{}.{}", f.module.name(), cls.name())
+    fn class_name_from_def_kind(kind: &FunctionKind) -> Option<String> {
+        // Returns the qualified class name owning the function, or
+        // None when no enclosing class exists. Callers populate
+        // `Callee.class_name`, which is itself `Option<String>`.
+        //
+        // Previously this panicked on the third arm. That made
+        // `callee_from_function_metadata` crash on code shaped like:
+        //
+        //     def helper(x): ...
+        //     my_helper = staticmethod(helper)
+        //     def caller(): my_helper(...)
+        //
+        // The runtime alias wraps a module-level function in
+        // `staticmethod()`. Pyrefly correctly flags the resulting
+        // type as `is_staticmethod`, but the underlying `FuncId.cls`
+        // stays `None` (the def is module-level). Returning `None`
+        // here lets the call flow through with no class_name — the
+        // honest answer.
+        if let FunctionKind::Def(f) = kind {
+            f.cls
+                .as_ref()
+                .map(|cls| format!("{}.{}", f.module.name(), cls.name()))
         } else if let FunctionKind::CallbackProtocol(c) = kind {
-            Self::qname_to_string(c.qname())
+            Some(Self::qname_to_string(c.qname()))
         } else {
-            panic!("class_name_from_def_kind - unsupported function kind: {kind:?}");
+            None
         }
     }
     fn target_from_def_kind(kind: &FunctionKind, module_name_override: Option<&str>) -> String {
@@ -533,14 +550,14 @@ impl<'a> CalleesWithLocation<'a> {
             Callee {
                 kind: String::from(CALLEE_KIND_STATICMETHOD),
                 target: Self::target_from_def_kind(&metadata.kind, None),
-                class_name: Some(Self::class_name_from_def_kind(&metadata.kind)),
+                class_name: Self::class_name_from_def_kind(&metadata.kind),
             }
         } else if metadata.flags.is_classmethod {
             Callee {
                 kind: String::from(CALLEE_KIND_CLASSMETHOD),
                 target: Self::target_from_def_kind(&metadata.kind, None),
                 // TODO: use type of receiver
-                class_name: Some(Self::class_name_from_def_kind(&metadata.kind)),
+                class_name: Self::class_name_from_def_kind(&metadata.kind),
             }
         } else {
             // Check if this is a builtins function that needs special casing.
