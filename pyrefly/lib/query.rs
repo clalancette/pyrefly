@@ -791,6 +791,15 @@ impl<'a> CalleesWithLocation<'a> {
                 // panicking.
                 Restriction::Bound(_) | Restriction::Unrestricted => vec![],
             },
+            // Bare TypeVar declaration in a construction context (`x()`
+            // where `x: F`, `F = TypeVar(...)`). Mirror the Quantified arm:
+            // instantiate a class bound, empty otherwise — never panic on
+            // the un-substituted form.
+            Type::TypeVar(tv) => match tv.restriction() {
+                Restriction::Bound(Type::ClassType(c)) => self.find_init_or_new(c.class_object()),
+                Restriction::Constraints(tys) => self.init_or_new_from_union(tys, callee_range),
+                Restriction::Bound(_) | Restriction::Unrestricted => vec![],
+            },
             Type::Union(u) => self.init_or_new_from_union(&u.members, callee_range),
             Type::Any(_) => vec![],
             // Python's `None` type. Calling it is a TypeError at
@@ -830,6 +839,28 @@ impl<'a> CalleesWithLocation<'a> {
                 // callees against. Empty list is the honest answer;
                 // the previous panic was defensive coding that
                 // fired on legitimate generic-function calls.
+                Restriction::Unrestricted => vec![],
+            },
+            // A bare TypeVar *declaration* used directly as a callee —
+            // e.g. a decorator whose parameter is typed `f: F` where
+            // `F = TypeVar("F", bound=Callable[..., Any])`. Distinct from
+            // Type::Quantified (the instantiated form): pyrefly models the
+            // un-substituted declaration as Type::TypeVar, which the match
+            // above doesn't cover, so it hit the catch-all panic. Resolve
+            // through the bound / constraints exactly like the Quantified
+            // arm, empty for an unrestricted var.
+            Type::TypeVar(tv) => match tv.restriction() {
+                Restriction::Bound(b) => {
+                    self.callee_from_type(b, call_target, callee_range, call_arguments)
+                }
+                Restriction::Constraints(tys) => tys
+                    .iter()
+                    .flat_map(|t| {
+                        self.callee_from_type(t, call_target, callee_range, call_arguments)
+                    })
+                    .unique()
+                    .sorted_by(|a, b| a.target.cmp(&b.target))
+                    .collect_vec(),
                 Restriction::Unrestricted => vec![],
             },
             Type::Never(_) => vec![],
