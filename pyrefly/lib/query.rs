@@ -1539,6 +1539,11 @@ impl<'a> CalleesWithLocation<'a> {
             // at runtime. Report "no callee" rather than crash the consumer,
             // mirroring the `None`/`Any` arms above.
             Type::Module(_) => vec![],
+            // A string-literal type (`LiteralString`) isn't constructible
+            // either. Mirrors the matching arm in `callee_from_type` (and the
+            // `None`/`Module` arms above) — report "no callee" rather than
+            // panic if a string-typed value reaches the constructor path.
+            Type::LiteralString(_) => vec![],
             x => {
                 panic!(
                     "unexpected type at [{}]: {x:?}",
@@ -1676,6 +1681,13 @@ impl<'a> CalleesWithLocation<'a> {
             }
             Type::Any(_) => vec![],
             Type::Literal(_) => vec![],
+            // A string-literal type (`LiteralString`) isn't callable — a value
+            // pyrefly infers as a string used as `x()`, e.g. iterating a list
+            // of dtype-name string literals and calling each
+            // (`for t in [..strings..]: t()`, seen in numpy's tests). Report
+            // "no callee" rather than crash the consumer, mirroring the
+            // `Literal`/`Any` arms above.
+            Type::LiteralString(_) => vec![],
             // A module isn't callable — `some_module()` is a TypeError at
             // runtime (e.g. a Python-2 `import cStringIO as StringIO` shim
             // used as `StringIO(...)`). Report "no callee" rather than crash

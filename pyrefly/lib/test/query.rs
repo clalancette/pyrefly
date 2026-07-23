@@ -1162,6 +1162,40 @@ def f() -> None:
 }
 
 #[test]
+fn test_callees_literal_string_callee_does_not_panic() {
+    let tdir = TempDir::new().unwrap();
+    let file_path = tdir.path().join("main.py");
+    // A value pyrefly types as `LiteralString` used as a callee. numpy's tests
+    // call a loop variable bound to dtype-name string literals
+    // (`for dtype_class in [..]: dtype_class()`), which pyrefly types
+    // `LiteralString(Explicit)`. callee_from_type used to hit its catch-all
+    // `panic!("unexpected type ...: LiteralString(Explicit)")` on that; it must
+    // return "no callee" instead (a string isn't callable). This aborted the
+    // whole slvt scan of numpy 1.24.4 before the fix.
+    let code = r#"
+from typing import LiteralString
+
+def f(s: LiteralString) -> None:
+    s()
+"#;
+    fs_anyhow::write(&file_path, code).unwrap();
+
+    let query = create_query();
+    let module_name = ModuleName::from_str("main");
+    let path = ModulePath::filesystem(file_path.clone());
+
+    let _errors = query.add_files(vec![(module_name, path.clone())]);
+
+    let callees = query
+        .get_callees_with_location(module_name, path, None)
+        .unwrap();
+    assert!(
+        callees.is_empty(),
+        "a string literal is not callable, expected no callees, got: {callees:?}"
+    );
+}
+
+#[test]
 fn test_callees_attribute_narrow_does_not_overwrite_rhs_trace() {
     // Regression test: narrowing on an attribute facet (e.g. `c.p == k.v`) used to
     // record the LHS property getter's trace against the narrow expression's range,
