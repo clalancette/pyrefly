@@ -1126,6 +1126,42 @@ def f() -> None:
 }
 
 #[test]
+fn test_callees_module_callee_does_not_panic() {
+    let tdir = TempDir::new().unwrap();
+    let file_path = tdir.path().join("main.py");
+    // A Python-2 `import cStringIO as StringIO` shim binds `StringIO` to the
+    // `cStringIO` module, so `StringIO(...)` is a call whose callee type is
+    // `Type::Module`. callee_from_type used to hit its catch-all
+    // `panic!("unexpected type ...")` on that; it must return "no callee"
+    // instead (a module isn't callable). Observed in ESPResSo's
+    // espressomd/MDA_ESP/__init__.py, which aborted the whole slvt scan.
+    let code = r#"
+import cStringIO as StringIO
+
+def f() -> None:
+    StringIO()
+"#;
+    fs_anyhow::write(&file_path, code).unwrap();
+
+    let query = create_query();
+    let module_name = ModuleName::from_str("main");
+    let path = ModulePath::filesystem(file_path.clone());
+
+    // `cStringIO` doesn't resolve (no stub), so errors are expected — pyrefly
+    // still binds `StringIO` to the module type. We don't assert on errors;
+    // the point is the callee query below must not panic.
+    let _errors = query.add_files(vec![(module_name, path.clone())]);
+
+    let callees = query
+        .get_callees_with_location(module_name, path, None)
+        .unwrap();
+    assert!(
+        callees.is_empty(),
+        "a module is not callable, expected no callees, got: {callees:?}"
+    );
+}
+
+#[test]
 fn test_callees_attribute_narrow_does_not_overwrite_rhs_trace() {
     // Regression test: narrowing on an attribute facet (e.g. `c.p == k.v`) used to
     // record the LHS property getter's trace against the narrow expression's range,

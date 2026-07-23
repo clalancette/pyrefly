@@ -1535,6 +1535,10 @@ impl<'a> CalleesWithLocation<'a> {
             // Pysa data-flow, etc.) want "no callee found" rather
             // than a hard crash. Mirrors the `Any` arm above.
             Type::None => vec![],
+            // A module isn't constructible — `some_module()` is a TypeError
+            // at runtime. Report "no callee" rather than crash the consumer,
+            // mirroring the `None`/`Any` arms above.
+            Type::Module(_) => vec![],
             x => {
                 panic!(
                     "unexpected type at [{}]: {x:?}",
@@ -1672,6 +1676,11 @@ impl<'a> CalleesWithLocation<'a> {
             }
             Type::Any(_) => vec![],
             Type::Literal(_) => vec![],
+            // A module isn't callable — `some_module()` is a TypeError at
+            // runtime (e.g. a Python-2 `import cStringIO as StringIO` shim
+            // used as `StringIO(...)`). Report "no callee" rather than crash
+            // the consumer, mirroring the `Any`/`Literal` arms above.
+            Type::Module(_) => vec![],
             Type::TypeAlias(data) => match &**data {
                 TypeAliasData::Value(t) => {
                     self.callee_from_type(&t.as_type(), call_target, callee_range, call_arguments)
