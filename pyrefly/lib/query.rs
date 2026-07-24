@@ -1544,6 +1544,10 @@ impl<'a> CalleesWithLocation<'a> {
             // `None`/`Module` arms above) — report "no callee" rather than
             // panic if a string-typed value reaches the constructor path.
             Type::LiteralString(_) => vec![],
+            // A tuple type isn't constructible either. Mirrors the matching arm
+            // in `callee_from_type` (and the `None`/`Module`/`LiteralString`
+            // arms above) — report "no callee" rather than panic.
+            Type::Tuple(_) => vec![],
             x => {
                 panic!(
                     "unexpected type at [{}]: {x:?}",
@@ -1693,6 +1697,12 @@ impl<'a> CalleesWithLocation<'a> {
             // used as `StringIO(...)`). Report "no callee" rather than crash
             // the consumer, mirroring the `Any`/`Literal` arms above.
             Type::Module(_) => vec![],
+            // A tuple type isn't callable — a value pyrefly infers as a tuple
+            // used as `x()` (seen in astroid's brain_builtin_inference.py,
+            // where a `build_elts` callee resolved to `Tuple(Unbounded(Any))`).
+            // Report "no callee" rather than crash the consumer, mirroring the
+            // `Module`/`Literal`/`Any` arms above.
+            Type::Tuple(_) => vec![],
             Type::TypeAlias(data) => match &**data {
                 TypeAliasData::Value(t) => {
                     self.callee_from_type(&t.as_type(), call_target, callee_range, call_arguments)

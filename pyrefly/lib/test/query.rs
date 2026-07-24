@@ -1196,6 +1196,37 @@ def f(s: LiteralString) -> None:
 }
 
 #[test]
+fn test_callees_tuple_callee_does_not_panic() {
+    let tdir = TempDir::new().unwrap();
+    let file_path = tdir.path().join("main.py");
+    // A value pyrefly types as a tuple used as a callee. Observed in astroid's
+    // brain_builtin_inference.py, where a `build_elts(...)` callee resolved to
+    // `Tuple(Unbounded(Any(Implicit)))`. callee_from_type used to hit its
+    // catch-all `panic!("unexpected type ...: Tuple(...)")` on that; it must
+    // return "no callee" instead (a tuple isn't callable). Trapped by slvt but
+    // it dropped the file to the legacy resolver until this fix.
+    let code = r#"
+def f(t: tuple) -> None:
+    t()
+"#;
+    fs_anyhow::write(&file_path, code).unwrap();
+
+    let query = create_query();
+    let module_name = ModuleName::from_str("main");
+    let path = ModulePath::filesystem(file_path.clone());
+
+    let _errors = query.add_files(vec![(module_name, path.clone())]);
+
+    let callees = query
+        .get_callees_with_location(module_name, path, None)
+        .unwrap();
+    assert!(
+        callees.is_empty(),
+        "a tuple is not callable, expected no callees, got: {callees:?}"
+    );
+}
+
+#[test]
 fn test_callees_attribute_narrow_does_not_overwrite_rhs_trace() {
     // Regression test: narrowing on an attribute facet (e.g. `c.p == k.v`) used to
     // record the LHS property getter's trace against the narrow expression's range,
