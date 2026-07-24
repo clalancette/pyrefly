@@ -1022,7 +1022,18 @@ impl<'a> CalleesWithLocation<'a> {
 
             let name = module.code_at(def.definition_range);
             let id = Identifier::new(name, def.definition_range);
-            let key = bindings.key_to_idx(&KeyDecoratedFunction(ShortIdentifier::new(&id)));
+            // `find_definition` resolved the call target to the binding at
+            // `def.definition_range`, which this path assumes IS the decorated
+            // function. But it can instead be a local alias of an lru_cache-
+            // wrapped function — e.g. `f = module_level_cached; f(x)` or
+            // `blend = obj.blend; blend(...)` — whose binding is an ordinary
+            // assignment, not a KeyDecoratedFunction. Look the key up fallibly
+            // and bail (no callee via this unwrap path) rather than panicking
+            // with "Internal error: key not found" when the resolved def isn't a
+            // decorated function. (Observed in textual's filter.py / _opacity.py.)
+            let key = bindings.key_to_idx_hashed_opt(Hashed::new(&KeyDecoratedFunction(
+                ShortIdentifier::new(&id),
+            )))?;
 
             // Get the undecorated function using ad_hoc_solve
             let answer = answers.get_idx(bindings.get(key).undecorated_idx)?;

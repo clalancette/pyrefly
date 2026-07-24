@@ -1227,6 +1227,46 @@ def f(t: tuple) -> None:
 }
 
 #[test]
+fn test_callees_lru_cache_alias_callee_does_not_panic() {
+    let tdir = TempDir::new().unwrap();
+    let file_path = tdir.path().join("main.py");
+    // A local alias of an `@lru_cache`-wrapped function, called through the
+    // alias. The call target's type is `_lru_cache_wrapper`, so callee
+    // resolution enters `_try_unwrap_lru_cache_wrapper`; `find_definition` then
+    // resolves to the alias *assignment* (an ordinary binding), not the
+    // decorated `def`, so the `KeyDecoratedFunction` key doesn't exist. That
+    // lookup used to panic `Internal error: key not found ... KeyDecoratedFunction`
+    // (observed in textual's filter.py `_monochrome_style = monochrome_style;
+    // _monochrome_style(style)` and _opacity.py `blend = base_background.blend`).
+    // It must now bail gracefully instead of panicking.
+    let code = r#"
+from functools import lru_cache
+
+@lru_cache(1024)
+def cached(x: int) -> int:
+    return x
+
+def g() -> None:
+    alias = cached
+    alias(1)
+"#;
+    fs_anyhow::write(&file_path, code).unwrap();
+
+    let query = create_query();
+    let module_name = ModuleName::from_str("main");
+    let path = ModulePath::filesystem(file_path.clone());
+
+    let _errors = query.add_files(vec![(module_name, path.clone())]);
+
+    // The point is that resolution completes without the key-not-found panic;
+    // we don't assert on callee contents (pyrefly may or may not resolve the
+    // aliased call via another path).
+    let _callees = query
+        .get_callees_with_location(module_name, path, None)
+        .unwrap();
+}
+
+#[test]
 fn test_callees_attribute_narrow_does_not_overwrite_rhs_trace() {
     // Regression test: narrowing on an attribute facet (e.g. `c.p == k.v`) used to
     // record the LHS property getter's trace against the narrow expression's range,
