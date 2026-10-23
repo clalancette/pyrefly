@@ -92,7 +92,11 @@ mimalloc = { version = "0.1.46", default-features = false }
 
 [features]
 debug-stack-overflow = ["dep:backtrace-on-stack-overflow"]
-default = []
+# Honor `PYREFLY_STDLIB_SEARCH_PATH` (see `module::typeshed::stdlib_search_path`).
+# On by default for the pyrefly binary; an embedder that needs resolution to
+# depend on its inputs alone builds with `default-features = false`.
+stdlib-search-path-env = []
+default = ["stdlib-search-path-env"]
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fbcode_build)"]}

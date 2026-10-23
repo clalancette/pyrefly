@@ -6,7 +6,6 @@
  */
 
 use std::collections::HashMap;
-use std::env;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -108,8 +107,19 @@ pub fn typeshed() -> anyhow::Result<&'static BundledTypeshedStdlib> {
 /// See https://typing.python.org/en/latest/spec/distributing.html#import-resolution-ordering.
 /// Note that you need to set both the PYREFLY_STDLIB_SEARCH_PATH environment variable AND
 /// --search-path/SEARCH_PATH for this workaround to be effective.
+///
+/// The environment is read only with the `stdlib-search-path-env` feature
+/// (on by default). Without it this is always `None`, so an embedder's
+/// resolution depends on nothing but what it passes in.
 pub fn stdlib_search_path() -> Option<PathBuf> {
-    env::var_os("PYREFLY_STDLIB_SEARCH_PATH").map(|path| Path::new(&path).to_path_buf())
+    #[cfg(feature = "stdlib-search-path-env")]
+    {
+        std::env::var_os("PYREFLY_STDLIB_SEARCH_PATH").map(|path| Path::new(&path).to_path_buf())
+    }
+    #[cfg(not(feature = "stdlib-search-path-env"))]
+    {
+        None
+    }
 }
 
 #[cfg(test)]
